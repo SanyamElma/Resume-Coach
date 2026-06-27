@@ -17,7 +17,36 @@ Copy `.env.example` → `.env` and set, at minimum:
 | `AI_PROVIDER` | `mock` (default), `openai`, or `gemini`. |
 | `OPENAI_API_KEY` / `GEMINI_API_KEY` | Required only for the matching provider. |
 
-## 3. Deploy with Docker Compose
+## 3. Deploy to Render (one-click Blueprint)
+
+The repo ships a [`render.yaml`](render.yaml) Blueprint that provisions **all three**
+components and wires them together automatically:
+
+1. Push the repo to GitHub (already done: `SanyamElma/Resume-Coach`).
+2. Sign in at <https://dashboard.render.com> → **New** → **Blueprint**.
+3. Connect the `Resume-Coach` repository. Render detects `render.yaml`.
+4. Click **Apply**. Render creates:
+   - `resume-coach-db` — managed PostgreSQL (free).
+   - `resume-coach-api` — Spring Boot API built from `backend/Dockerfile`; DB creds,
+     a generated `JWT_SECRET`, and CORS are injected automatically.
+   - `resume-coach-frontend` — React static site; its `VITE_API_BASE_URL` is wired to
+     the API service automatically.
+5. First build takes a few minutes (Maven + Docker). When the API shows **Live**, open
+   the frontend URL (e.g. `https://resume-coach-frontend.onrender.com`).
+
+**After first deploy:**
+- Change `ADMIN_PASSWORD` on the `resume-coach-api` service → Environment, then redeploy.
+- To use a real LLM: set `AI_PROVIDER=openai` (or `gemini`) and add `OPENAI_API_KEY` /
+  `GEMINI_API_KEY` in the same Environment tab.
+
+**Free-tier caveats:**
+- The API **sleeps after ~15 min idle**; the first request after that cold-starts in ~50s.
+- The container filesystem is **ephemeral** — uploaded resume *files* are lost on restart
+  (all relational data persists in Postgres). Attach a paid Render Disk, or migrate to S3
+  (§8), for durable file storage.
+- Render's free PostgreSQL is time-limited; upgrade the DB plan for anything long-lived.
+
+## 4. Deploy with Docker Compose
 
 ```bash
 docker compose up --build -d
@@ -31,7 +60,7 @@ Services:
 
 Uploaded resumes persist in the `resume-storage` volume.
 
-## 4. Manual / VM Deploy
+## 5. Manual / VM Deploy
 
 **Database**
 ```sql
@@ -56,7 +85,7 @@ VITE_API_BASE_URL=https://api.yourdomain.com npm run build
 # serve ./dist behind nginx / a CDN
 ```
 
-## 5. Production Hardening Checklist
+## 6. Production Hardening Checklist
 
 - [ ] Rotate `JWT_SECRET`; never use the shipped default.
 - [ ] Change the seeded admin password.
@@ -68,13 +97,13 @@ VITE_API_BASE_URL=https://api.yourdomain.com npm run build
 - [ ] Set resource limits and run behind an autoscaler; the API is stateless and scales horizontally.
 - [ ] Add Testcontainers integration tests to CI (see ARCHITECTURE.md §7).
 
-## 6. Observability
+## 7. Observability
 
 - Health: `GET /actuator/health`
 - Metrics: `GET /actuator/metrics`
 - Swagger: `GET /swagger-ui.html`
 
-## 7. AWS S3 Migration (future)
+## 8. AWS S3 Migration (future)
 
 `StorageService` already abstracts file IO. To migrate:
 1. Add the AWS SDK v2 `s3` dependency.

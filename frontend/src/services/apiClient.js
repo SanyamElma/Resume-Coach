@@ -11,6 +11,11 @@ import axios from 'axios';
 const TOKEN_KEY = 'ra_access_token';
 const REFRESH_KEY = 'ra_refresh_token';
 
+// Resolve the API base URL. Empty → same-origin (dev uses the Vite proxy). A value
+// without a scheme (e.g. a bare Render host injected at build time) gets https:// prepended.
+const rawBase = import.meta.env.VITE_API_BASE_URL || '';
+export const API_BASE = rawBase && !/^https?:\/\//.test(rawBase) ? `https://${rawBase}` : rawBase;
+
 export const tokenStore = {
   getAccess: () => localStorage.getItem(TOKEN_KEY),
   getRefresh: () => localStorage.getItem(REFRESH_KEY),
@@ -25,7 +30,7 @@ export const tokenStore = {
 };
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -65,7 +70,9 @@ apiClient.interceptors.response.use(
       original._retry = true;
       isRefreshing = true;
       try {
-        const { data } = await axios.post('/api/auth/refresh', {
+        // Use a bare axios call (no interceptors) against the resolved base URL so the
+        // refresh works both same-origin (dev proxy) and cross-origin (prod).
+        const { data } = await axios.post(`${API_BASE}/api/auth/refresh`, {
           refreshToken: tokenStore.getRefresh(),
         });
         const { accessToken, refreshToken } = data.data;

@@ -1,0 +1,87 @@
+# ===========================================================================
+# Render Blueprint — deploys the whole stack from GitHub in one click:
+#   1) managed PostgreSQL   2) Spring Boot API (Docker)   3) React static site
+#
+# Usage: Render Dashboard → New → Blueprint → connect this repo → Apply.
+# Render reads this file, provisions all three, and wires them together.
+# ===========================================================================
+
+databases:
+  - name: resume-coach-db
+    databaseName: resume_analyzer
+    user: resume_user
+    plan: free
+
+services:
+  # ----------------------------- Backend API -----------------------------
+  - type: web
+    name: resume-coach-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # Database connection — injected from the managed Postgres above.
+      - key: DB_HOST
+        fromDatabase:
+          name: resume-coach-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: resume-coach-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: resume-coach-db
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: resume-coach-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: resume-coach-db
+          property: password
+      # Secrets / config
+      - key: JWT_SECRET
+        generateValue: true            # Render generates a strong random secret
+      - key: AI_PROVIDER
+        value: mock                    # offline default; set to openai/gemini + a key to enable
+      - key: OPENAI_API_KEY
+        sync: false                    # set in the dashboard if AI_PROVIDER=openai
+      - key: GEMINI_API_KEY
+        sync: false                    # set in the dashboard if AI_PROVIDER=gemini
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://*.onrender.com  # trusts the frontend static site origin
+      - key: ADMIN_EMAIL
+        value: admin@resume-analyzer.dev
+      - key: ADMIN_PASSWORD
+        value: Admin@12345             # CHANGE THIS in the dashboard after first deploy
+      - key: STORAGE_LOCAL_PATH
+        value: /app/storage/resumes
+
+  # ----------------------------- Frontend --------------------------------
+  - type: web
+    name: resume-coach-frontend
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    autoDeploy: true
+    envVars:
+      # Built into the bundle so the SPA calls the API cross-origin.
+      # `property: host` yields the API's hostname; the client prepends https://.
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: resume-coach-api
+          property: host
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

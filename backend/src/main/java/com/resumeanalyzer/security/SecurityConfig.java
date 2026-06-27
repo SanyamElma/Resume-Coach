@@ -88,7 +88,14 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(appProperties.security().cors().allowedOrigins());
+        List<String> origins = appProperties.security().cors().allowedOrigins();
+        // Use origin *patterns* when any entry contains a wildcard (e.g. https://*.onrender.com),
+        // which also permits credentials — plain allowedOrigins cannot wildcard with credentials.
+        if (origins.stream().anyMatch(o -> o.contains("*"))) {
+            config.setAllowedOriginPatterns(origins);
+        } else {
+            config.setAllowedOrigins(origins);
+        }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));

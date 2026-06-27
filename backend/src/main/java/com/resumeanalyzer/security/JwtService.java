@@ -8,6 +8,8 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
@@ -27,7 +29,18 @@ public class JwtService {
 
     public JwtService(AppProperties properties) {
         this.props = properties.security().jwt();
-        this.signingKey = Keys.hmacShaKeyFor(java.util.Base64.getDecoder().decode(props.secret()));
+        // Derive a fixed 256-bit HMAC key from the configured secret via SHA-256. This
+        // accepts ANY non-empty secret string (raw or Base64) — no length/encoding
+        // constraints — so platform-generated secrets (e.g. Render) work out of the box.
+        this.signingKey = Keys.hmacShaKeyFor(sha256(props.secret()));
+    }
+
+    private static byte[] sha256(String value) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 algorithm unavailable", e);
+        }
     }
 
     /** Generates a signed access token for the given user. */
