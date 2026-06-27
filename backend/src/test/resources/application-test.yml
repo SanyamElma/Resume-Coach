@@ -15,3 +15,6 @@ spring:
 app:
   ai:
     provider: mock
+    engine:
+      vector-store: memory
+      embedding-provider: mock

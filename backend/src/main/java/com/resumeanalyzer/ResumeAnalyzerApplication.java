@@ -1,5 +1,6 @@
 package com.resumeanalyzer;
 
+import com.resumeanalyzer.ai.config.AiEngineProperties;
 import com.resumeanalyzer.config.properties.AppProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -14,7 +15,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * backing the resume analysis, skill-gap, and mock-interview features.</p>
  */
 @SpringBootApplication
-@EnableConfigurationProperties(AppProperties.class)
+@EnableConfigurationProperties({AppProperties.class, AiEngineProperties.class})
 @EnableJpaAuditing
 @EnableAsync
 public class ResumeAnalyzerApplication {

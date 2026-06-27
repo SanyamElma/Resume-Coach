@@ -22,3 +22,7 @@ spring:
 app:
   ai:
     provider: ${AI_PROVIDER:mock}
+    engine:
+      # H2 has no pgvector; use the in-memory vector store for offline dev.
+      vector-store: memory
+      embedding-provider: mock
