@@ -74,12 +74,11 @@ services:
     autoDeploy: true
     envVars:
       # Built into the bundle so the SPA calls the API cross-origin.
-      # `property: host` yields the API's hostname; the client prepends https://.
+      # NOTE: Render's `fromService property: host` returns only the service *name*
+      # (e.g. "resume-coach-api"), not the public hostname — so we hardcode the public
+      # URL, which is deterministic from the service name.
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: resume-coach-api
-          property: host
+        value: https://resume-coach-api.onrender.com
     routes:
       - type: rewrite
         source: /*
