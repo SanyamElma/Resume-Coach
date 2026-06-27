@@ -68,7 +68,6 @@ services:
   - type: web
     name: resume-coach-frontend
     runtime: static
-    plan: free
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
