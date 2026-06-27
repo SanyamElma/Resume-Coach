@@ -13,7 +13,8 @@ frontend/dist/
 *.local
 backend/storage/
 backend/data/
-storage/
+# Anchored to repo root so it does NOT match the src/.../storage Java package.
+/storage/
 
 # IDE
 .idea/
