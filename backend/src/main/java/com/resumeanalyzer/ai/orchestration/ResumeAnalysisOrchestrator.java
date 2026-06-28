@@ -13,6 +13,7 @@ import com.resumeanalyzer.ai.prompt.PromptRegistry;
 import com.resumeanalyzer.ai.prompt.PromptTemplate;
 import com.resumeanalyzer.ai.rag.RagIngestService;
 import com.resumeanalyzer.ai.rag.Retriever;
+import com.resumeanalyzer.ai.security.PromptSanitizer;
 import com.resumeanalyzer.ai.scoring.AtsBreakdown;
 import com.resumeanalyzer.ai.scoring.AtsScorer;
 import com.resumeanalyzer.ai.scoring.AtsSignals;
@@ -61,7 +62,11 @@ public class ResumeAnalysisOrchestrator {
     private final Retriever retriever;
     private final AiProviderResolver aiProviderResolver;
     private final PromptRegistry promptRegistry;
+    private final PromptSanitizer promptSanitizer;
+    private final GroundedLlmExecutor llmExecutor;
     private final ObjectMapper objectMapper;
+
+    private static final String OPERATION = "analysis.explain";
 
     public SkillGapResult analyze(UUID resumeId, UUID userId, String resumeText, String jdText) {
         String cleaned = cleaner.clean(resumeText);
@@ -77,8 +82,8 @@ public class ResumeAnalysisOrchestrator {
         AtsBreakdown ats = atsScorer.score(
                 new AtsSignals(skillMatch.score(), experienceScore, keywordScore, sections, cleaned));
 
-        // Best-effort RAG grounding: ingest (cached) then retrieve relevant excerpts.
-        String context = retrieveContext(resumeId, userId, jdText, resumeText);
+        // Best-effort RAG grounding: ingest (cached) then retrieve sanitized relevant excerpts.
+        RagContext context = retrieveContext(resumeId, userId, jdText, resumeText);
 
         Prose prose = explain(ats, skillMatch, experience, context);
 
@@ -114,15 +119,28 @@ public class ResumeAnalysisOrchestrator {
 
     // ------------------------------ RAG context ------------------------------
 
-    private String retrieveContext(UUID resumeId, UUID userId, String jdText, String resumeText) {
+    /** Retrieved grounding context: sanitized excerpt text plus retrieval observability stats. */
+    private record RagContext(String text, int chunkCount, double topSimilarity) {
+        static final RagContext EMPTY = new RagContext("", 0, 0.0);
+    }
+
+    private RagContext retrieveContext(UUID resumeId, UUID userId, String jdText, String resumeText) {
         try {
             ragIngestService.ingest(resumeId, userId, resumeText);
             List<ScoredChunk> chunks = retriever.retrieveForResume(resumeId, userId,
                     jdText == null || jdText.isBlank() ? "relevant experience and skills" : jdText, null);
-            return chunks.stream().map(ScoredChunk::content).collect(Collectors.joining("\n---\n"));
+            if (chunks.isEmpty()) {
+                return RagContext.EMPTY;
+            }
+            // Sanitize each excerpt against prompt injection before it ever reaches the model.
+            String text = chunks.stream()
+                    .map(c -> promptSanitizer.sanitize(c.content()).sanitized())
+                    .collect(Collectors.joining("\n---\n"));
+            double topSimilarity = chunks.stream().mapToDouble(ScoredChunk::score).max().orElse(0.0);
+            return new RagContext(text, chunks.size(), topSimilarity);
         } catch (Exception e) {
             log.warn("RAG grounding unavailable, proceeding without retrieved context: {}", e.getMessage());
-            return "";
+            return RagContext.EMPTY;
         }
     }
 
@@ -130,7 +148,7 @@ public class ResumeAnalysisOrchestrator {
 
     private record Prose(List<String> strengths, List<String> weaknesses, List<String> recommendations) {}
 
-    private Prose explain(AtsBreakdown ats, SkillMatchResult match, ExperienceResult experience, String context) {
+    private Prose explain(AtsBreakdown ats, SkillMatchResult match, ExperienceResult experience, RagContext context) {
         if (!"mock".equals(aiProviderResolver.current().name())) {
             try {
                 return llmExplain(ats, match, experience, context);
@@ -138,10 +156,11 @@ public class ResumeAnalysisOrchestrator {
                 log.warn("LLM explanation failed, falling back to deterministic prose: {}", e.getMessage());
             }
         }
+        llmExecutor.recordFallback(OPERATION, context.chunkCount(), context.topSimilarity());
         return deterministicProse(ats, match, experience);
     }
 
-    private Prose llmExplain(AtsBreakdown ats, SkillMatchResult match, ExperienceResult experience, String context)
+    private Prose llmExplain(AtsBreakdown ats, SkillMatchResult match, ExperienceResult experience, RagContext context)
             throws Exception {
         PromptTemplate template = promptRegistry.get(PromptRegistry.ANALYSIS_EXPLAIN);
         String user = template.renderUser(Map.of(
@@ -153,10 +172,11 @@ public class ResumeAnalysisOrchestrator {
                 "matchedSkills", String.join(", ", match.matchedRequired()),
                 "missingSkills", String.join(", ", missingSkills(match)),
                 "totalYears", String.valueOf(experience.totalYears()),
-                "context", context.isBlank() ? "(no excerpts retrieved)" : context));
+                "context", context.text().isBlank() ? "(no excerpts retrieved)" : context.text()));
 
-        String raw = aiProviderResolver.current().generate(List.of(
-                ChatTurn.system(template.system()), ChatTurn.user(user)));
+        String raw = llmExecutor.execute(OPERATION, template,
+                List.of(ChatTurn.system(template.system()), ChatTurn.user(user)),
+                context.chunkCount(), context.topSimilarity());
         JsonNode json = objectMapper.readTree(stripFences(raw));
         return new Prose(
                 toList(json.get("strengths")), toList(json.get("weaknesses")), toList(json.get("recommendations")));

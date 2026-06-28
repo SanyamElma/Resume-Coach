@@ -2,6 +2,7 @@ package com.resumeanalyzer.admin.controller;
 
 import com.resumeanalyzer.admin.dto.AdminMetricsDto;
 import com.resumeanalyzer.admin.service.AdminService;
+import com.resumeanalyzer.ai.observability.AiUsageSnapshot;
 import com.resumeanalyzer.common.dto.ApiResponse;
 import com.resumeanalyzer.common.dto.PageResponse;
 import com.resumeanalyzer.security.SecurityUtils;
@@ -39,6 +40,12 @@ public class AdminController {
     @Operation(summary = "Aggregate platform metrics")
     public ResponseEntity<ApiResponse<AdminMetricsDto>> metrics() {
         return ResponseEntity.ok(ApiResponse.ok(adminService.metrics()));
+    }
+
+    @GetMapping("/ai-metrics")
+    @Operation(summary = "Aggregate AI usage: tokens, cost, cache-hit rate, latency, fallbacks")
+    public ResponseEntity<ApiResponse<AiUsageSnapshot>> aiMetrics() {
+        return ResponseEntity.ok(ApiResponse.ok(adminService.aiUsage()));
     }
 
     @GetMapping("/users")

@@ -87,6 +87,24 @@ app:
         top-k: ${RAG_TOP_K:5}
         similarity-threshold: ${RAG_SIMILARITY_THRESHOLD:0.25}
 
+    # AI response cache (in-process LRU + TTL by default; swap for Redis bean to scale out)
+    cache:
+      ttl-seconds: ${AI_CACHE_TTL_SECONDS:3600}
+      max-entries: ${AI_CACHE_MAX_ENTRIES:1000}
+
+    # Per-model pricing for cost tracking (USD per 1K tokens). Built-in defaults exist for common
+    # models; override or extend here. The mock provider is always free.
+    pricing:
+      models:
+        gpt-4o-mini:
+          input-per1k: 0.00015
+          output-per1k: 0.0006
+          embedding-per1k: 0
+        text-embedding-3-small:
+          input-per1k: 0
+          output-per1k: 0
+          embedding-per1k: 0.00002
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

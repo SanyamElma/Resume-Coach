@@ -13,8 +13,13 @@ import com.resumeanalyzer.ai.prompt.PromptRegistry;
 import com.resumeanalyzer.ai.provider.MockAiProvider;
 import com.resumeanalyzer.ai.rag.RagIngestService;
 import com.resumeanalyzer.ai.rag.Retriever;
+import com.resumeanalyzer.ai.cache.InMemoryAiResponseCache;
+import com.resumeanalyzer.ai.observability.AiPricingProperties;
+import com.resumeanalyzer.ai.observability.AiTelemetry;
+import com.resumeanalyzer.ai.observability.TokenEstimator;
 import com.resumeanalyzer.ai.scoring.AtsScorer;
 import com.resumeanalyzer.ai.section.ResumeSectionDetector;
+import com.resumeanalyzer.ai.security.PromptSanitizer;
 import com.resumeanalyzer.ai.skill.SkillDictionary;
 import com.resumeanalyzer.ai.skill.SkillExtractor;
 import com.resumeanalyzer.ai.skill.SkillMatcher;
@@ -45,6 +50,9 @@ class ResumeAnalysisOrchestratorTest {
             new AppProperties(null, null, new AppProperties.Ai("mock", null, null, null));
     private final AiProviderResolver aiResolver =
             new AiProviderResolver(Map.of("mock", new MockAiProvider()), appProps);
+    private final GroundedLlmExecutor llmExecutor = new GroundedLlmExecutor(
+            aiResolver, new InMemoryAiResponseCache(3600, 1000), new AiTelemetry(),
+            new TokenEstimator(), new AiPricingProperties(Map.of()), appProps);
 
     private final ResumeAnalysisOrchestrator orchestrator = new ResumeAnalysisOrchestrator(
             new ResumeCleaner(), new ResumeSectionDetector(), skillExtractor,
@@ -54,7 +62,7 @@ class ResumeAnalysisOrchestratorTest {
             new RagIngestService(new ResumeCleaner(), new ResumeSectionDetector(),
                     new ChunkingEngine(skillExtractor), embeddingResolver, store, mapper),
             new Retriever(embeddingResolver, store, engineProps),
-            aiResolver, new PromptRegistry(), mapper);
+            aiResolver, new PromptRegistry(), new PromptSanitizer(), llmExecutor, mapper);
 
     private static final String RESUME = """
             Jane Doe

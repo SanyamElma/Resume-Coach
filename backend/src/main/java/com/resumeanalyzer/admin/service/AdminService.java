@@ -1,6 +1,8 @@
 package com.resumeanalyzer.admin.service;
 
 import com.resumeanalyzer.admin.dto.AdminMetricsDto;
+import com.resumeanalyzer.ai.observability.AiTelemetry;
+import com.resumeanalyzer.ai.observability.AiUsageSnapshot;
 import com.resumeanalyzer.analysis.repository.AnalysisReportRepository;
 import com.resumeanalyzer.common.dto.PageResponse;
 import com.resumeanalyzer.common.exception.BadRequestException;
@@ -33,6 +35,12 @@ public class AdminService {
     private final InterviewSessionRepository sessionRepository;
     private final AnalysisReportRepository reportRepository;
     private final UserMapper userMapper;
+    private final AiTelemetry aiTelemetry;
+
+    /** Aggregate AI usage since startup (tokens, cost, cache-hit rate, latency, fallbacks). */
+    public AiUsageSnapshot aiUsage() {
+        return aiTelemetry.snapshot();
+    }
 
     @Transactional(readOnly = true)
     public AdminMetricsDto metrics() {

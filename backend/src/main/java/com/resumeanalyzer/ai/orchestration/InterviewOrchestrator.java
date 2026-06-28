@@ -11,6 +11,7 @@ import com.resumeanalyzer.ai.prompt.PromptRegistry;
 import com.resumeanalyzer.ai.prompt.PromptTemplate;
 import com.resumeanalyzer.ai.rag.RagIngestService;
 import com.resumeanalyzer.ai.rag.Retriever;
+import com.resumeanalyzer.ai.security.PromptSanitizer;
 import com.resumeanalyzer.ai.skill.SkillExtractor;
 import com.resumeanalyzer.ai.skill.SkillMatchResult;
 import com.resumeanalyzer.ai.skill.SkillMatcher;
@@ -53,7 +54,11 @@ public class InterviewOrchestrator {
     private final Retriever retriever;
     private final AiProviderResolver aiProviderResolver;
     private final PromptRegistry promptRegistry;
+    private final PromptSanitizer promptSanitizer;
+    private final GroundedLlmExecutor llmExecutor;
     private final ObjectMapper objectMapper;
+
+    private static final String OPERATION = "interview.questions";
 
     /**
      * Generates {@code count} tailored questions for a candidate against an (optional) target role.
@@ -79,7 +84,7 @@ public class InterviewOrchestrator {
         List<String> focusSkills = new ArrayList<>(new LinkedHashSet<>(
                 strengths.isEmpty() ? new ArrayList<>(resumeSkills) : strengths));
 
-        String context = retrieveContext(resumeId, userId, jd, jdText);
+        RagContext context = retrieveContext(resumeId, userId, jd, jdText);
 
         if (!"mock".equals(aiProviderResolver.current().name())) {
             try {
@@ -88,14 +93,20 @@ public class InterviewOrchestrator {
                 log.warn("LLM question generation failed, falling back to deterministic set: {}", e.getMessage());
             }
         }
+        llmExecutor.recordFallback(OPERATION, context.chunkCount(), context.topSimilarity());
         return deterministicQuestions(focusSkills, gaps, count);
     }
 
     // ------------------------------ RAG context ------------------------------
 
-    private String retrieveContext(UUID resumeId, UUID userId, JobRequirements jd, String jdText) {
+    /** Retrieved grounding context: sanitized excerpt text plus retrieval observability stats. */
+    private record RagContext(String text, int chunkCount, double topSimilarity) {
+        static final RagContext EMPTY = new RagContext("", 0, 0.0);
+    }
+
+    private RagContext retrieveContext(UUID resumeId, UUID userId, JobRequirements jd, String jdText) {
         if (resumeId == null || userId == null) {
-            return "";
+            return RagContext.EMPTY;
         }
         try {
             ragIngestService.ingest(resumeId, userId, jdText == null ? "" : jdText);
@@ -107,26 +118,34 @@ public class InterviewOrchestrator {
                     ? (jdText == null || jdText.isBlank() ? "relevant experience and skills" : jdText)
                     : String.join(", ", jd.requiredSkills());
             List<ScoredChunk> chunks = retriever.retrieveForResume(resumeId, userId, query, null);
-            return chunks.stream().map(ScoredChunk::content).collect(Collectors.joining("\n---\n"));
+            if (chunks.isEmpty()) {
+                return RagContext.EMPTY;
+            }
+            String text = chunks.stream()
+                    .map(c -> promptSanitizer.sanitize(c.content()).sanitized())
+                    .collect(Collectors.joining("\n---\n"));
+            double topSimilarity = chunks.stream().mapToDouble(ScoredChunk::score).max().orElse(0.0);
+            return new RagContext(text, chunks.size(), topSimilarity);
         } catch (Exception e) {
             log.warn("RAG grounding unavailable for interview questions: {}", e.getMessage());
-            return "";
+            return RagContext.EMPTY;
         }
     }
 
     // --------------------------- LLM (grounded) ------------------------------
 
-    private List<InterviewQuestion> llmQuestions(JobRequirements jd, List<String> gaps, String context, int count)
+    private List<InterviewQuestion> llmQuestions(JobRequirements jd, List<String> gaps, RagContext context, int count)
             throws Exception {
         PromptTemplate template = promptRegistry.get(PromptRegistry.INTERVIEW_QUESTIONS);
         String user = template.renderUser(Map.of(
                 "requiredSkills", String.join(", ", jd.requiredSkills()),
                 "missingSkills", gaps.isEmpty() ? "(none)" : String.join(", ", gaps),
-                "context", context.isBlank() ? "(no excerpts retrieved)" : context,
+                "context", context.text().isBlank() ? "(no excerpts retrieved)" : context.text(),
                 "count", String.valueOf(count)));
 
-        String raw = aiProviderResolver.current().generate(List.of(
-                ChatTurn.system(template.system()), ChatTurn.user(user)));
+        String raw = llmExecutor.execute(OPERATION, template,
+                List.of(ChatTurn.system(template.system()), ChatTurn.user(user)),
+                context.chunkCount(), context.topSimilarity());
         JsonNode array = objectMapper.readTree(stripToArray(raw));
 
         List<InterviewQuestion> questions = new ArrayList<>();

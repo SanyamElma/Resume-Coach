@@ -2,8 +2,13 @@ package com.resumeanalyzer.ai.orchestration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumeanalyzer.ai.AiProviderResolver;
+import com.resumeanalyzer.ai.cache.InMemoryAiResponseCache;
 import com.resumeanalyzer.ai.chunk.ChunkingEngine;
 import com.resumeanalyzer.ai.config.AiEngineProperties;
+import com.resumeanalyzer.ai.observability.AiPricingProperties;
+import com.resumeanalyzer.ai.observability.AiTelemetry;
+import com.resumeanalyzer.ai.observability.TokenEstimator;
+import com.resumeanalyzer.ai.security.PromptSanitizer;
 import com.resumeanalyzer.ai.embedding.EmbeddingProviderResolver;
 import com.resumeanalyzer.ai.embedding.MockEmbeddingProvider;
 import com.resumeanalyzer.ai.jd.JobRequirementExtractor;
@@ -44,6 +49,9 @@ class InterviewOrchestratorTest {
             new AppProperties(null, null, new AppProperties.Ai("mock", null, null, null));
     private final AiProviderResolver aiResolver =
             new AiProviderResolver(Map.of("mock", new MockAiProvider()), appProps);
+    private final GroundedLlmExecutor llmExecutor = new GroundedLlmExecutor(
+            aiResolver, new InMemoryAiResponseCache(3600, 1000), new AiTelemetry(),
+            new TokenEstimator(), new AiPricingProperties(Map.of()), appProps);
 
     private final InterviewOrchestrator orchestrator = new InterviewOrchestrator(
             new ResumeCleaner(), skillExtractor, new JobRequirementExtractor(skillExtractor),
@@ -51,7 +59,7 @@ class InterviewOrchestratorTest {
             new RagIngestService(new ResumeCleaner(), new ResumeSectionDetector(),
                     new ChunkingEngine(skillExtractor), embeddingResolver, store, mapper),
             new Retriever(embeddingResolver, store, engineProps),
-            aiResolver, new PromptRegistry(), mapper);
+            aiResolver, new PromptRegistry(), new PromptSanitizer(), llmExecutor, mapper);
 
     private static final String RESUME = """
             Jane Doe
