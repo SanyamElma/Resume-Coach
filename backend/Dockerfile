@@ -16,7 +16,8 @@ COPY --from=build /app/target/resume-analyzer-api.jar app.jar
 RUN mkdir -p /app/storage && chown -R app:app /app
 USER app
 EXPOSE 8080
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0"
+# Fast-start flags for throttled free-tier CPUs (cuts JVM/JIT warm-up at boot).
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=70.0 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xss512k"
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

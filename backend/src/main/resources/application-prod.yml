@@ -1,4 +1,8 @@
 spring:
+  # Lazy bean initialisation slashes cold-start time on CPU-throttled free instances so the
+  # service passes the platform health-check window. Beans initialise on first use.
+  main:
+    lazy-initialization: true
   jpa:
     show-sql: false
 
