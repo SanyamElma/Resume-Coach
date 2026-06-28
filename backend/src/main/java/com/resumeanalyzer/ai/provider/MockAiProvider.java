@@ -46,6 +46,13 @@ public class MockAiProvider implements AiProvider {
     }
 
     @Override
+    public String generate(List<ChatTurn> conversation) {
+        // The orchestrator uses deterministic prose when the mock provider is active, so this
+        // is never relied upon for content; return an empty JSON object as a safe default.
+        return "{}";
+    }
+
+    @Override
     public ParsedResume analyzeResume(String resumeText) {
         String text = safe(resumeText);
         return new ParsedResume(

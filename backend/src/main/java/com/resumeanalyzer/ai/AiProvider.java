@@ -44,4 +44,11 @@ public interface AiProvider {
 
     /** Produces the final aggregated feedback for a completed interview. */
     InterviewFeedback generateFeedback(List<ChatTurn> conversation);
+
+    /**
+     * Raw chat completion used by the orchestrator for grounded prompts assembled from the
+     * {@link com.resumeanalyzer.ai.prompt.PromptRegistry}. The mock provider returns an empty
+     * JSON object (the orchestrator uses deterministic prose when the mock is active).
+     */
+    String generate(List<ChatTurn> conversation);
 }

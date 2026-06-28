@@ -35,6 +35,11 @@ public abstract class AbstractLlmProvider implements AiProvider {
     protected abstract String complete(List<ChatTurn> conversation);
 
     @Override
+    public String generate(List<ChatTurn> conversation) {
+        return complete(conversation);
+    }
+
+    @Override
     public ParsedResume analyzeResume(String resumeText) {
         String raw = complete(List.of(
                 ChatTurn.system(AiPrompts.RESUME_SYSTEM),

@@ -1,8 +1,8 @@
 package com.resumeanalyzer.analysis.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.resumeanalyzer.ai.AiProviderResolver;
 import com.resumeanalyzer.ai.model.SkillGapResult;
+import com.resumeanalyzer.ai.orchestration.ResumeAnalysisOrchestrator;
 import com.resumeanalyzer.analysis.domain.AnalysisReport;
 import com.resumeanalyzer.analysis.dto.AnalysisReportDto;
 import com.resumeanalyzer.analysis.dto.RunAnalysisRequest;
@@ -33,7 +33,7 @@ import java.util.UUID;
 public class AnalysisService {
 
     private final AnalysisReportRepository reportRepository;
-    private final AiProviderResolver aiProviderResolver;
+    private final ResumeAnalysisOrchestrator analysisOrchestrator;
     private final ResumeService resumeService;
     private final JobService jobService;
     private final AnalysisMapper analysisMapper;
@@ -44,8 +44,9 @@ public class AnalysisService {
         Resume resume = resumeService.getOwnedResume(userId, request.resumeId());
         JobDescription jd = jobService.getOwnedJob(userId, request.jobDescriptionId());
 
-        SkillGapResult result = aiProviderResolver.current()
-                .analyzeSkillGap(resume.getParsedText(), jd.getDescription());
+        // Full AI engine: deterministic extraction/matching/scoring + RAG-grounded explanation.
+        SkillGapResult result = analysisOrchestrator.analyze(
+                resume.getId(), userId, resume.getParsedText(), jd.getDescription());
 
         AnalysisReport report = AnalysisReport.builder()
                 .resume(resume)
