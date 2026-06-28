@@ -1,7 +1,8 @@
 package com.resumeanalyzer.job.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.resumeanalyzer.ai.AiProviderResolver;
+import com.resumeanalyzer.ai.jd.JobRequirementExtractor;
+import com.resumeanalyzer.ai.jd.JobRequirements;
 import com.resumeanalyzer.ai.model.JobAnalysis;
 import com.resumeanalyzer.common.dto.PageResponse;
 import com.resumeanalyzer.common.exception.ResourceNotFoundException;
@@ -30,7 +31,7 @@ import java.util.UUID;
 public class JobService {
 
     private final JobDescriptionRepository jobRepository;
-    private final AiProviderResolver aiProviderResolver;
+    private final JobRequirementExtractor jobRequirementExtractor;
     private final JobMapper jobMapper;
     private final UserService userService;
     private final ObjectMapper objectMapper;
@@ -64,9 +65,16 @@ public class JobService {
                 .orElseThrow(() -> ResourceNotFoundException.of("Job description", jobId));
     }
 
+    /**
+     * Structures the JD deterministically (skill dictionary + region detection) rather than via the
+     * LLM — this is a deterministic task, so it must not be delegated to a model that could
+     * hallucinate skills. The stored shape matches {@link JobAnalysis} to keep the API contract.
+     */
     private String structure(String description) {
         try {
-            JobAnalysis analysis = aiProviderResolver.current().analyzeJobDescription(description);
+            JobRequirements req = jobRequirementExtractor.extract(description);
+            JobAnalysis analysis = new JobAnalysis(
+                    req.requiredSkills(), req.preferredSkills(), req.keywords(), req.minYearsExperience());
             return objectMapper.writeValueAsString(analysis);
         } catch (Exception e) {
             log.warn("JD structuring failed; storing without structured data: {}", e.getMessage());

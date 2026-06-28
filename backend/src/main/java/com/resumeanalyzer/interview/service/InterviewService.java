@@ -5,6 +5,7 @@ import com.resumeanalyzer.ai.model.AnswerEvaluation;
 import com.resumeanalyzer.ai.model.ChatTurn;
 import com.resumeanalyzer.ai.model.InterviewFeedback;
 import com.resumeanalyzer.ai.model.InterviewQuestion;
+import com.resumeanalyzer.ai.orchestration.InterviewOrchestrator;
 import com.resumeanalyzer.common.dto.PageResponse;
 import com.resumeanalyzer.common.exception.BadRequestException;
 import com.resumeanalyzer.common.exception.ResourceNotFoundException;
@@ -43,6 +44,7 @@ public class InterviewService {
 
     private final InterviewSessionRepository sessionRepository;
     private final AiProviderResolver aiProviderResolver;
+    private final InterviewOrchestrator interviewOrchestrator;
     private final ResumeService resumeService;
     private final JobService jobService;
     private final UserService userService;
@@ -52,7 +54,9 @@ public class InterviewService {
     public List<InterviewQuestion> generateQuestions(UUID userId, GenerateQuestionsRequest request) {
         String resumeText = resolveResumeText(userId, request.resumeId());
         String jobText = resolveJobText(userId, request.jobDescriptionId());
-        return aiProviderResolver.current().generateQuestions(resumeText, jobText, request.effectiveCount());
+        // Full AI engine: deterministic JD/skill/gap analysis + RAG-grounded, tailored questions.
+        return interviewOrchestrator.generateQuestions(
+                request.resumeId(), userId, resumeText, jobText, request.effectiveCount());
     }
 
     @Transactional
